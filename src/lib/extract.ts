@@ -107,7 +107,12 @@ export function visibleText(html: string) {
     .trim();
 }
 
-export const MAX_COPY = 6000;
+/* 4,000 characters is the top of a landing page — headline, subhead, the
+   first sections — which is where a stranger decides what is being sold. It
+   was 6,000. The free plans budget TOKENS per minute and per day (Groq:
+   8K a minute, 200K a day), so a third off every reading is a third more
+   readings before a column goes busy, and a third off the Claude bill. */
+export const MAX_COPY = 4000;
 
 export async function readUrl(raw: string) {
   const { html, finalUrl } = await fetchPage(raw.includes("://") ? raw : `https://${raw}`);
