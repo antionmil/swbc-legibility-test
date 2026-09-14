@@ -95,6 +95,17 @@ export async function POST(req: Request) {
   }
 
   const results = await readAll(text);
+  if (!Array.isArray(results)) {
+    await refundGate(req);
+    const minutes = Math.max(1, Math.round(results.line / 60_000));
+    return NextResponse.json(
+      {
+        error: `GPT and Gemini run on a free plan that allows two new readings every five minutes, and both are taken. The next one opens in about ${minutes} minute${minutes === 1 ? "" : "s"}. This did not count toward your three.`,
+        reason: "line",
+      },
+      { status: 503, headers: { "retry-after": String(Math.ceil(results.line / 1000)) } },
+    );
+  }
   const answers: Reading["answers"] = results.map((r) => ({
     key: r.reader.key,
     company: r.reader.company,

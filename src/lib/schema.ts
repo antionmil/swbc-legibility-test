@@ -1,6 +1,7 @@
+import { sql } from "drizzle-orm";
 import { pgTable, text, integer, timestamp, jsonb, index } from "drizzle-orm/pg-core";
 
-/* Three tables, and what is NOT stored matters as much as what is.
+/* Four tables, and what is NOT stored matters as much as what is.
  *
  * Pasted copy is never written down anywhere — not in `readings`, not in the
  * cache key (which is a hash), not in a log. Only readings of a public URL are
@@ -47,5 +48,13 @@ export const readings = pgTable(
   },
   (t) => [index("readings_updated_idx").on(t.updated_at)],
 );
+
+/** One row, `gateway`: the start time of every AI Gateway call in the last
+ *  five minutes. The functions in sql/pacer.sql hand out turns from it, so the
+ *  free tier's limit is respected by the site as a whole, not per instance. */
+export const pacer = pgTable("pacer", {
+  name: text("name").primaryKey(),
+  calls: timestamp("calls", { withTimezone: true }).array().notNull().default(sql`'{}'`),
+});
 
 export type StoredAnswer = { key: string; label: string; model: string; text: string };

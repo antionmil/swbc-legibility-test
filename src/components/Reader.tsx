@@ -108,7 +108,7 @@ export function Reader() {
           </button>
           <span className="text-[13px] text-muted">
             {state.at === "working"
-              ? waited < 6 ? "Three models are reading it at once." : `${waited} seconds — waiting for the slowest of the three.`
+              ? waited < 6 ? "Three models are reading it." : `${waited} seconds. GPT and Gemini run on a free plan and take turns, so this can take up to a minute.`
               : mode === "copy"
                 ? "Pasted copy is never stored or shown to anyone."
                 : "Web address readings are public, so others can see what the three said."}

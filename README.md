@@ -98,16 +98,44 @@ measured. At the ceiling of 300 new readings a day, the Anthropic bill is at
 most about $0.60 a day. An incomplete reading still pays for the readers that
 did answer, which is why the ceiling is not refunded (below).
 
-## The gateway free tier is the bottleneck
+## Two new readings every five minutes
 
-The free tier is rate limited, and the limit is shared across the whole team,
-not set per model. That was tested, not assumed: ten models the team had never
-called, one call each two seconds apart, all 429. In a burst, GPT and Gemini
-each answer once or twice, then refuse for a while. Each reader retries twice,
-waiting what the gateway asks for (at most 6 seconds); after that the column
-says "busy", the reading is incomplete, and the visitor's go is handed back.
-Paid gateway credits remove the gateway's limits. The site does not need them
-to run; it needs them to run under load.
+GPT and Gemini run on the gateway's free tier, and the site stays on it by
+decision: no paid credits for the MVP. Its limit was measured on day 12, not
+guessed, because the docs describe the behaviour but give no numbers:
+
+| Test | Result |
+|---|---|
+| 4 minutes idle, then one call every 30 s, GPT and Gemini alternating | calls 1–5 → 200, call 6 onward → 429 |
+| one call a minute after that | 200 again 80 s after the last refused call |
+| a burst of 5 when the window held 1 call | exactly four 200s and one 429 |
+| 10 models the team had never called, 2 s apart, during a block | all 429 |
+
+So: **5 calls in any rolling 5 minutes, shared by every model on the team.**
+A reading makes two gateway calls (GPT and Gemini), so the site can start two
+new readings every five minutes.
+
+`sql/pacer.sql` enforces that for every serverless instance at once. The
+function `take_gateway_turn()` locks one row holding the start times of recent
+calls, and hands out a turn only if the reading's two calls fit under a limit
+of **4** per 305 seconds — one call and five seconds short of what was
+measured, as margin. A visitor waits up to 40 seconds for a turn. Past that:
+
+- no model is called at all, not even Claude, so a refused reading costs nothing;
+- the page says when the next turn opens, and the go is handed back;
+- a cached reading still comes back instantly, because it needs no turn.
+
+If a 429 gets through anyway, the model of the limit was wrong, and
+`block_gateway()` fills the window so nothing calls for five minutes. Retrying
+into a 429 is not done: during a block, the refused calls kept it in place.
+
+Tested by attempting it: six parallel turn requests against the function got
+exactly two turns and four refusals, and three parallel readings on the dev
+server gave two full readings (3.3 s each, all three models) and one refusal in
+0.12 s with no model called.
+
+Paid gateway credits remove the gateway's limit. Nothing in the code needs to
+change for that; raise `LIMIT` in `src/lib/pacer.ts`.
 
 ## What a visitor gets, and what stops abuse
 
@@ -191,6 +219,7 @@ unsubscribe link before it is honest to offer.
 pnpm install
 vercel env pull .env.local   # brings VERCEL_OIDC_TOKEN, valid for 12 hours
 pnpm db:push
+psql "$DATABASE_URL" -f sql/pacer.sql   # the turn functions; db:push does not create them
 pnpm dev
 ```
 

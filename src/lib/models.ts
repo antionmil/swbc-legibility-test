@@ -1,6 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { getVercelOidcToken } from "@vercel/oidc";
+import { blockGateway, takeTurn } from "./pacer";
 
 /* THE PROMPT. Byte-identical for every model, from prep/prompts.md.
  * Any difference between what the three are asked turns their disagreement
@@ -57,7 +58,7 @@ function tidy(text: string) {
 }
 
 /** Rate limited, or refused by the plan. */
-class Skip extends Error {
+class Unavailable extends Error {
   constructor(readonly busy: boolean, message: string, readonly retryAfter = 0) { super(message); }
 }
 
@@ -93,8 +94,8 @@ async function viaGateway(reader: Reader, content: string, signal: AbortSignal) 
   const message = (Array.isArray(json.error) ? json.error[0]?.message : json.error?.message) ?? `${reader.route} ${res.status}`;
   // 429 rate limit; 401/402/403 a missing plan, spent allowance or model the
   // plan does not include. None of them will fix itself within this request.
-  if (res.status === 429) throw new Skip(true, "rate limited", Number(res.headers.get("retry-after")) || 0);
-  if ([401, 402, 403].includes(res.status)) throw new Skip(false, message.slice(0, 120));
+  if (res.status === 429) throw new Unavailable(true, "rate limited", Number(res.headers.get("retry-after")) || 0);
+  if ([401, 402, 403].includes(res.status)) throw new Unavailable(false, message.slice(0, 120));
   if (!res.ok || !json.choices) throw new Error(message.slice(0, 200));
   logUsage(reader, json.usage?.prompt_tokens ?? 0, json.usage?.completion_tokens ?? 0);
   return json.choices[0]?.message?.content ?? "";
@@ -110,46 +111,47 @@ async function viaAnthropic(reader: Reader, content: string, signal: AbortSignal
     logUsage(reader, res.usage.input_tokens, res.usage.output_tokens);
     return res.content.map((b) => (b.type === "text" ? b.text : "")).join(" ");
   } catch (err) {
-    if (err instanceof Anthropic.RateLimitError) throw new Skip(true, "rate limited");
+    if (err instanceof Anthropic.RateLimitError) throw new Unavailable(true, "rate limited");
     throw err;
   }
 }
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/* One reader, with a timeout and up to two retries on a rate limit, waiting
-   what the gateway asks for (retry-after) or 2 seconds, never more than 6.
-   A column that says "busy" is better than a spinner that never ends, and far
-   better than a verdict computed from two answers and presented as if it
-   were three. */
-export async function read(reader: Reader, copy: string): Promise<Answer> {
-  const content = `${PROMPT}\n\n---\n${copy}`;
-  const deadline = Date.now() + 38_000;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const left = deadline - Date.now();
-    if (left < 2_000) break;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Math.min(20_000, left));
-    try {
-      const raw = reader.route === "anthropic"
-        ? await viaAnthropic(reader, content, controller.signal)
-        : await viaGateway(reader, content, controller.signal);
-      const text = tidy(raw);
-      if (text) return { ok: true, reader, text };
-      console.error(`[llm] ${reader.route}:${reader.model} returned an empty answer`);
-      return { ok: false, reader, reason: "error" };
-    } catch (err) {
-      if (err instanceof Skip && err.busy && attempt < 2) {
-        await wait(Math.min(6_000, Math.max(2_000, err.retryAfter * 1000)));
-        continue;
-      }
-      console.error(`[llm] ${reader.route}:${reader.model} failed:`, (err as Error).message);
-      return { ok: false, reader, reason: err instanceof Skip && err.busy ? "busy" : "error" };
-    } finally {
-      clearTimeout(timer);
-    }
+/* One reader, one call, a timeout. No retry on a 429: on the gateway's free
+   tier a refused call keeps the block in place, so the reader moves the whole
+   line back (pacer.backOff) and says "busy" instead. A column that says busy
+   is better than a spinner that never ends, and far better than a verdict
+   computed from two answers and presented as if it were three. */
+async function readOne(reader: Reader, content: string, waitMs = 0): Promise<Answer> {
+  if (waitMs > 0) await wait(waitMs);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const raw = reader.route === "anthropic"
+      ? await viaAnthropic(reader, content, controller.signal)
+      : await viaGateway(reader, content, controller.signal);
+    const text = tidy(raw);
+    if (text) return { ok: true, reader, text };
+    console.error(`[llm] ${reader.route}:${reader.model} returned an empty answer`);
+    return { ok: false, reader, reason: "error" };
+  } catch (err) {
+    const busy = err instanceof Unavailable && err.busy;
+    if (busy && reader.route === "gateway") await blockGateway();
+    console.error(`[llm] ${reader.route}:${reader.model} failed:`, (err as Error).message);
+    return { ok: false, reader, reason: busy ? "busy" : "error" };
+  } finally {
+    clearTimeout(timer);
   }
-  return { ok: false, reader, reason: "busy" };
 }
 
-export const readAll = (copy: string) => Promise.all(READERS.map((r) => read(r, copy)));
+/* One turn covers the reading's two gateway calls, and it is taken BEFORE
+   anything is called. No turn within the wait limit means no model is called
+   at all — not even Claude — so a reading that cannot get a verdict costs
+   nothing. GPT and Gemini start together at the turn; Claude starts at once. */
+export async function readAll(copy: string): Promise<Answer[] | { line: number }> {
+  const content = `${PROMPT}\n\n---\n${copy}`;
+  const turn = await takeTurn();
+  if (!turn.ok) return { line: turn.retryMs };
+  return Promise.all(READERS.map((r) => readOne(r, content, r.route === "gateway" ? turn.waitMs : 0)));
+}
