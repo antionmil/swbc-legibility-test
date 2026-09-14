@@ -62,9 +62,29 @@ Measured on 14 September 2026, same prompt, same copy, single calls:
 | GPT-5 mini, `effort: "minimal"` | 36 | $0.0001 | 1.5 s |
 
 GPT-5 mini does not accept `none`; `minimal` is its floor. Every call logs its
-own usage and cost — grep the function logs for `[llm]`. **The cost of a whole
-reading in production has not been measured yet**; replace this line with the
-figure once it has.
+own usage and cost — grep the function logs for `[llm]`.
+
+A whole reading in production, three readers plus the judge, measured from
+those log lines on 14 September 2026:
+
+| Input | Claude | GPT | Gemini | Judge | Reading | Wait |
+|---|---|---|---|---|---|---|
+| a pasted paragraph | $0.00035 | $0.00014 | $0.00009 | $0.00040 | **$0.0010** | 4 s |
+| basecamp.com, ~1,400 tokens of page | $0.00160 | $0.00042 | $0.00052 | $0.00044 | **$0.0030** | 3 s |
+
+Claude is half the bill on a full page, at four times GPT's input price. At
+the ceiling of 300 new readings a day that is at most about $0.90 a day. An
+incomplete reading still pays for the readers that did answer, which is why
+the ceiling is not refunded (below).
+
+## The gateway free tier cannot carry a launch
+
+Vercel AI Gateway's free tier serves GPT-5 mini and Gemini 2.5 Flash, but at
+rate limits too tight for a public page. On launch night, after about five
+readings in a few minutes, both answered 429 to every call for the next
+several minutes, and every reading came back incomplete. Paid gateway credits
+move the team off the free tier. Until then the site works, honestly, and
+mostly says "incomplete".
 
 ## What a visitor gets, and what stops abuse
 
