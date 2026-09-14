@@ -89,6 +89,11 @@ logs for `[llm]`. Measured in production on 14 September 2026:
 | a pasted paragraph | $0.00035 | $0.00014 | $0.00009 | $0.00040 | **$0.0010** | 4 s |
 | basecamp.com, ~1,400 tokens of page | $0.00160 | $0.00042 | $0.00052 | $0.00044 | **$0.0030** | 3 s |
 
+After the judge prompt grew (structured output and a category rule), the
+judge's input went from ~260 to ~607 tokens. Measured on the live site the
+same night, a pasted paragraph: Claude $0.00025, judge $0.00073, GPT and
+Gemini free — **$0.0010 a reading** billed.
+
 Only Claude and the judge are billed to the Anthropic key. GPT and Gemini are
 covered by the gateway's free monthly credit ($5), which pays for thousands of
 readings at these prices. Pages are now cut to 4,000 characters instead of
