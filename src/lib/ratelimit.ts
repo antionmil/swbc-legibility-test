@@ -67,12 +67,31 @@ export type Gate =
  */
 export async function checkGate(req: Request): Promise<Gate> {
   const day = today();
-  const total = await bump(`gen:${day}`);
-  if (total > CEILING) return { ok: false, reason: "ceiling" };
   const h = await ipHash(req);
+  /* The visitor's own bucket is checked FIRST. The first version bumped the
+     site-wide counter first, so every refused request still spent a unit of
+     the ceiling: tested in production on day 12, four 429s moved it from 13 to
+     17. One connection looping on a refused request could have used up the
+     whole day's ceiling and locked every other visitor out. */
   const mine = await bump(`gen:${day}:${h}`);
   if (mine > IP_LIMIT) return { ok: false, reason: "ip", limit: IP_LIMIT };
+  const total = await bump(`gen:${day}`);
+  if (total > CEILING) {
+    await unbump(`gen:${day}:${h}`);
+    return { ok: false, reason: "ceiling" };
+  }
   return { ok: true };
+}
+
+async function unbump(bucket: string) {
+  if (!hasDb()) {
+    memo.set(bucket, Math.max(0, (memo.get(bucket) ?? 0) - 1));
+    return;
+  }
+  await db()
+    .update(schema.events)
+    .set({ n: sql`greatest(${schema.events.n} - 1, 0)` })
+    .where(sql`${schema.events.bucket} = ${bucket}`);
 }
 
 /** Honeypot plus a minimum time-on-form. Cheap, no captcha, no third party. */
@@ -92,16 +111,5 @@ export function looksLikeBot(form: { trap?: string; startedAt?: number }) {
  *  charged: the models that DID answer were paid for, so a gateway outage
  *  must not turn into unlimited spend on the one provider that still works. */
 export async function refundGate(req: Request): Promise<void> {
-  const day = today();
-  const h = await ipHash(req);
-  for (const bucket of [`gen:${day}:${h}`]) {
-    if (!hasDb()) {
-      memo.set(bucket, Math.max(0, (memo.get(bucket) ?? 0) - 1));
-      continue;
-    }
-    await db()
-      .update(schema.events)
-      .set({ n: sql`greatest(${schema.events.n} - 1, 0)` })
-      .where(sql`${schema.events.bucket} = ${bucket}`);
-  }
+  await unbump(`gen:${today()}:${await ipHash(req)}`);
 }

@@ -71,8 +71,15 @@ figure once it has.
 - **3 readings per connection per day**, and a site-wide ceiling
   (`DAILY_GENERATION_CEILING`). Both are counted with one atomic
   `INSERT … ON CONFLICT` on the `events` table, so every serverless instance
-  shares the same count. Tested by attempting it: five readings from one
-  address, the fourth and fifth refused with 429.
+  shares the same count. The visitor's own counter is checked first, and only
+  a request that passes it touches the site-wide one. The first version did it
+  the other way round, and the production test caught it: four refused
+  requests moved the ceiling from 13 to 17, so one connection looping on a 429
+  could have locked out every visitor for the day. Tested by attempting it,
+  both locally and on the live site: over the limit, 429 and the ceiling does
+  not move; over the ceiling, 429 and the visitor's go is handed back. A
+  forged `x-forwarded-for` does not help on Vercel — no new counter appeared
+  for the forged addresses, because Vercel replaces the header.
 - **An incomplete reading gives the visitor's go back.** Without that, three
   provider hiccups in a row ended someone's day with nothing to show. Only the
   visitor's own counter is refunded. The site-wide ceiling stays charged,
