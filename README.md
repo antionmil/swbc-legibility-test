@@ -10,45 +10,26 @@ Live at **legibilitytest.onedaybuilt.com**.
 
 Three readers from ONE model family agree with each other more often than
 three families do. A test built to find disagreement cannot start with a
-shared blind spot, so the panel is deliberately mixed: one model from OpenAI,
-one from Google, one from Anthropic.
+shared blind spot, so the panel is deliberately mixed:
+
+| Reader | Model | Route |
+|---|---|---|
+| OpenAI | `openai/gpt-5-mini` | Vercel AI Gateway |
+| Google | `google/gemini-2.5-flash` | Vercel AI Gateway |
+| Anthropic | `claude-haiku-4-5` | Anthropic API, direct |
+
+The gateway authenticates with the Vercel project's own OIDC token
+(`@vercel/oidc`), so there is no OpenAI or Google account and no provider key
+anywhere. Claude goes direct on the Anthropic key, because the gateway's free
+tier does not serve Anthropic models. One model per company: this is the MVP.
 
 The page says what this is and is not: a consistency test, not a simulation of
 real visitors. It shows whether the copy says one thing or several.
 
-## Only Claude is paid for
-
-The brief for the build: live, and no reading may cost much. So each column is
-a **chain** of models, tried in order until one answers, and every link except
-Claude runs on a free plan.
-
-| Column | Tried in order | Plan |
-|---|---|---|
-| OpenAI | `openai/gpt-oss-120b`, then `openai/gpt-oss-20b` on Groq | Groq free plan (`GROQ_API_KEY`) |
-| | `openai/gpt-5-mini` on Vercel AI Gateway | gateway free tier (OIDC, no key) |
-| Google | `gemini-2.5-flash`, then `gemini-2.5-flash-lite` on Google AI Studio | Gemini API free plan (`GEMINI_API_KEY`) |
-| | `google/gemini-2.5-flash` on Vercel AI Gateway | gateway free tier |
-| Anthropic | `claude-haiku-4-5` | Anthropic API, paid |
-
-The column shows the model that actually answered, so a fallback is never
-passed off as the first choice. A link with no key is skipped quietly, so the
-site runs on the gateway alone until the keys are added.
-
-**Why chains, and why not a pool of gateway models.** Day 12 launched on the
-gateway free tier alone. It held for about five readings; then every model on
-the team answered 429 for many minutes. That was tested, not assumed: ten
-models the team had never called, one call each two seconds apart, all 429 —
-the limit is shared across the team, so more gateway models buy nothing.
-Groq's and Google's free plans are separate allowances. Groq publishes
-gpt-oss-120b at 30 requests a minute, 1,000 a day and 200,000 tokens a day
-(checked 14 September 2026). Google shows its free limits only inside AI
-Studio; they were not verified from the public docs.
-
-**The price of Google's free plan is the data.** Google's Gemini API terms say
-that on unpaid services it uses what is submitted to improve its products, and
-that human reviewers may read it. The paste box and the footer say so and ask
-people not to paste anything confidential. Groq says it does not retain
-inference data by default.
+**Tried and removed the same day:** a chain of models per column, with
+Groq's and Google AI Studio's free plans in front of the gateway. It needed
+two more accounts and keys, and Google's free plan keeps and may review what
+it reads. It was dropped for one model each.
 
 ## How the verdict is made
 
@@ -78,7 +59,7 @@ disagree, one cannot tell, none can tell). It passed 16 of 16 over two runs.
 node qa/judge.test.mjs    # about $0.007
 ```
 
-If any reader fails — every link busy, timed out or errored — there is no
+If any reader fails — busy after its retries, timed out or errored — there is no
 verdict. The page says "incomplete", nothing is cached or published, and the go
 is handed back (see below).
 
@@ -87,8 +68,8 @@ is handed back (see below).
 The test is a first read. A model that deliberates for two thousand hidden
 tokens is doing something no visitor does, and it is also where the money and
 the wait went. Claude Haiku 4.5 does not think by default, so the floor setting
-keeps the three reading the same way. Each model has its own floor: gpt-oss
-accepts `low`, GPT-5 mini `minimal`, Gemini `none`.
+keeps the three reading the same way. Each model has its own floor: GPT-5 mini
+accepts `minimal`, Gemini `none`.
 
 Measured on 14 September 2026 through the gateway, same prompt, same copy:
 
@@ -100,22 +81,33 @@ Measured on 14 September 2026 through the gateway, same prompt, same copy:
 
 ## What a reading costs
 
-Every call logs its tokens, and the paid ones their cost — grep the function
-logs for `[llm]`. Measured in production on 14 September 2026, when GPT and
-Gemini still went through the gateway (their share was covered by its free
-monthly credit):
+Every call logs its tokens, and Claude's calls their cost — grep the function
+logs for `[llm]`. Measured in production on 14 September 2026:
 
-| Input | Claude | Judge | Paid per reading | Wait |
-|---|---|---|---|---|
-| a pasted paragraph | $0.00035 | $0.00040 | **$0.0008** | 4 s |
-| basecamp.com, ~1,400 tokens of page | $0.00160 | $0.00044 | **$0.0020** | 3 s |
+| Input | Claude | GPT | Gemini | Judge | Reading | Wait |
+|---|---|---|---|---|---|---|
+| a pasted paragraph | $0.00035 | $0.00014 | $0.00009 | $0.00040 | **$0.0010** | 4 s |
+| basecamp.com, ~1,400 tokens of page | $0.00160 | $0.00042 | $0.00052 | $0.00044 | **$0.0030** | 3 s |
 
-Pages are now cut to 4,000 characters instead of 6,000 (the top of the page is
-where a stranger decides what is sold, and the free plans budget tokens), so a
-full page should come in nearer $0.0015. That figure is computed, not yet
-measured. At the ceiling of 300 new readings a day, the worst case is about
-$0.60 a day. An incomplete reading still pays for Claude if Claude answered,
-which is why the ceiling is not refunded (below).
+Only Claude and the judge are billed to the Anthropic key. GPT and Gemini are
+covered by the gateway's free monthly credit ($5), which pays for thousands of
+readings at these prices. Pages are now cut to 4,000 characters instead of
+6,000 (the top of the page is where a stranger decides what is sold), so a
+full page should cost less than the figure above; that is computed, not yet
+measured. At the ceiling of 300 new readings a day, the Anthropic bill is at
+most about $0.60 a day. An incomplete reading still pays for the readers that
+did answer, which is why the ceiling is not refunded (below).
+
+## The gateway free tier is the bottleneck
+
+The free tier is rate limited, and the limit is shared across the whole team,
+not set per model. That was tested, not assumed: ten models the team had never
+called, one call each two seconds apart, all 429. In a burst, GPT and Gemini
+each answer once or twice, then refuse for a while. Each reader retries twice,
+waiting what the gateway asks for (at most 6 seconds); after that the column
+says "busy", the reading is incomplete, and the visitor's go is handed back.
+Paid gateway credits remove the gateway's limits. The site does not need them
+to run; it needs them to run under load.
 
 ## What a visitor gets, and what stops abuse
 
@@ -169,7 +161,7 @@ characters, the page asks for the copy to be pasted instead.
 
 ## What is stored
 
-- **Pasted copy is never stored by this site.** Only its hash is, as a cache key. Google's free plan may keep what Gemini reads (above).
+- **Pasted copy is never stored.** Only its hash is, as a cache key.
 - A reading of a public address is published at `/r/<id>` and in the "recently
   read" feed: host, path, the three sentences, the verdict. One row per
   address; a new reading replaces the old one.
@@ -202,7 +194,7 @@ pnpm db:push
 pnpm dev
 ```
 
-Environment: `DATABASE_URL` (Neon, Frankfurt), `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`,
+Environment: `DATABASE_URL` (Neon, Frankfurt), `ANTHROPIC_API_KEY`,
 `NEXT_PUBLIC_SITE_URL`, `IP_DAILY_LIMIT`, `DAILY_GENERATION_CEILING`,
 `CRON_SECRET`. The gateway needs no variable in production: Vercel injects the
 OIDC token into every function.

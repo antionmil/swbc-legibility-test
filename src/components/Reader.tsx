@@ -110,7 +110,7 @@ export function Reader() {
             {state.at === "working"
               ? waited < 6 ? "Three models are reading it at once." : `${waited} seconds — waiting for the slowest of the three.`
               : mode === "copy"
-                ? "We never store pasted copy. Gemini runs on Google’s free plan, which may keep what it reads — do not paste anything confidential."
+                ? "Pasted copy is never stored or shown to anyone."
                 : "Web address readings are public, so others can see what the three said."}
           </span>
         </div>
