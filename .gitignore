@@ -1,0 +1,12 @@
+node_modules
+.next
+# Every env file, however it is named — `.env` and `.env.local` alone miss
+# `.env.production` and `.env.*.local`, exactly the file created in a hurry.
+.env*
+!.env.example
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+/public/artifacts/*
+!/public/artifacts/.gitkeep
+.next-build

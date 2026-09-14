@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+/* ONE palette, this file, nothing hardcoded in a component.
+ *
+ * Contrast measured against BOTH surfaces text sits on — the page (#f4f6f8)
+ * and the white cards the three answers are printed on, in that order:
+ *   ink    #101418   17.1 : 1   18.5 : 1
+ *   body   #374151    9.5 : 1   10.3 : 1
+ *   muted  #5b6570    5.5 : 1    5.9 : 1
+ *   accent #c2410c    4.8 : 1    5.2 : 1
+ * White on each verdict pill:
+ *   disagree #c2410c 5.2 · partial #a16207 4.9 · agree #15803d 5.0
+ *   unclear  #475569 7.6 · incomplete #6b7280 4.8
+ *
+ * A `faint` grey (#6b7580) was measured and dropped: 4.3 : 1 on the page,
+ * and the small labels that would have used it are text however small. */
+@theme {
+  --color-ground: #f4f6f8;
+  --color-card: #ffffff;
+  --color-rule: #d5dbe1;
+  --color-ink: #101418;
+  --color-body: #374151;
+  --color-muted: #5b6570;
+  --color-accent: #c2410c;
+  --color-v-agree: #15803d;
+  --color-v-partial: #a16207;
+  --color-v-disagree: #c2410c;
+  --color-v-unclear: #475569;
+  --color-v-incomplete: #6b7280;
+
+  --font-display: var(--font-display-loaded), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-body-loaded), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-loaded), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html, body { background: var(--color-ground); color: var(--color-ink); }
+body { font-family: var(--font-body); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .rise { animation: rise .45s cubic-bezier(.2,.7,.3,1) both; }
+  .rise-2 { animation-delay: .08s; }
+  .rise-3 { animation-delay: .16s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+}
